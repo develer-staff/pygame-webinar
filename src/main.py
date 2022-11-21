@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import sys
 
 import pygame as pg
@@ -15,7 +16,21 @@ class Game:
     def __init__(self):
         pg.init()  # Inizializza i moduli di pygame.
         self.screen = self.init_screen()
+        self.mouse_pos = (0, 0)
+        self.init_entities()
         self.run_game_loop()
+
+    def init_entities(self):
+        self.player = pg.Surface((50, 50))
+        self.player.fill(YELLOW)
+
+        eye = pg.Surface((10, 20))
+        eye.fill("black")
+        self.player.blits([(eye, (12, 10)),
+                           (eye, (28, 10))])
+
+        self.player_rect = self.player.get_rect()
+        self.player_rect.center = (400, 225)
 
     def init_screen(self) -> pg.Surface:
         """
@@ -62,18 +77,29 @@ class Game:
                 # logiche, ad esempio mostrare un pop-up per chiedere conferma,
                 # oppure eseguire un salvataggio automatico.
                 sys.exit()
+            elif event.type == pg.MOUSEMOTION:
+                # Usiamo l'attributo `pos` dell'evento `MOUSEMOTION`
+                # per aggiornare la posizione del mouse.
+                self.mouse_pos = event.pos
 
     def update(self):
         """
         Applica le logiche per aggiornare lo stato di gioco.
         """
-        pass
+        self.player_rect.x += 1
+        if self.player_rect.x > RISOLUZIONE[0]:
+            self.player_rect.x = - self.player_rect.width
 
     def render(self):
         """
         Disegna a schermo (renderizza) l'attuale stato di gioco.
         """
-        pass
+        self.screen.fill(BLUE)
+        self.screen.blit(self.player, self.player_rect)
+
+        # Aggiorna la vista, rendendo effettivamente visibile ciò che
+        # abbiamo disegnato su `self.screen` (che è la nostra finestra).
+        pg.display.update()
 
 
 if __name__ == '__main__':
