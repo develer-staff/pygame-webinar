@@ -8,6 +8,51 @@ import pygame as pg
 from settings import *
 
 
+class Player(pg.sprite.Sprite):
+
+    def __init__(self, *groups: pg.sprite.AbstractGroup):
+        super().__init__(*groups)
+
+        self.image = self.get_surface()
+        self.rect = self.image.get_rect()
+
+        self.dir = pg.math.Vector2()
+        self.speed = 0.4
+
+    def get_surface(self) -> pg.Surface:
+        """
+        Restituisce una surface
+        """
+        surf = pg.Surface((50, 50))
+        surf.fill(YELLOW)
+        eye = pg.Surface((10, 20))
+        eye.fill("black")
+        surf.blits([(eye, (12, 10)), (eye, (28, 10))])
+        return surf
+
+    def move(self, keys, dt):
+        """
+        Gestisce l'input utente legato al movimento del giocatore.
+        """
+        self.dir.x = keys[pg.K_RIGHT] - keys[pg.K_LEFT]
+
+        # Nota: asse delle y invertito in Pygame.
+        self.dir.y = keys[pg.K_DOWN] - keys[pg.K_UP]
+
+        if self.dir.magnitude() != 0:
+            self.dir.normalize()
+
+        self.rect.move_ip(self.dir * self.speed * dt)
+
+    def update(self, dt):
+        """
+        Applica le logiche per aggiornare lo stato del player.
+        """
+        # Mapping dei tasti. { key : 0 | 1 }.
+        keys = pg.key.get_pressed()
+        self.move(keys, dt)
+
+
 class Game:
     """
     Classe principale di gioco.
@@ -18,19 +63,12 @@ class Game:
         self.screen = self.init_screen()
         self.mouse_pos = (0, 0)
         self.init_entities()
+        self.clock = pg.time.Clock()
         self.run_game_loop()
 
     def init_entities(self):
-        self.player = pg.Surface((50, 50))
-        self.player.fill(YELLOW)
-
-        eye = pg.Surface((10, 20))
-        eye.fill("black")
-        self.player.blits([(eye, (12, 10)),
-                           (eye, (28, 10))])
-
-        self.player_rect = self.player.get_rect()
-        self.player_rect.center = (400, 225)
+        self.entities = pg.sprite.Group()
+        self.player = Player(self.entities)
 
     def init_screen(self) -> pg.Surface:
         """
@@ -56,12 +94,13 @@ class Game:
           * Render.
 
         """
-        while True:                # Game loop.
-            self.process_events()  # Input.
-            self.update()          # Update.
-            self.render()          # Render.
+        while True:                            # Game loop.
+            delta_time = self.clock.tick(60)   # Limita il framerate e restituisce il tempo trascorso dall'ultimo frame.
+            self.process_events(delta_time)    # Input.
+            self.update(delta_time)            # Update.
+            self.draw()                        # Render.
 
-    def process_events(self):
+    def process_events(self, dt: int):
         """
         Questo metodo si occupa di catturare gli eventi
         e aggiornare lo stato di gioco di conseguenza.
@@ -82,20 +121,18 @@ class Game:
                 # per aggiornare la posizione del mouse.
                 self.mouse_pos = event.pos
 
-    def update(self):
+    def update(self, dt: int):
         """
         Applica le logiche per aggiornare lo stato di gioco.
         """
-        self.player_rect.x += 1
-        if self.player_rect.x > RISOLUZIONE[0]:
-            self.player_rect.x = - self.player_rect.width
+        self.entities.update(dt)
 
-    def render(self):
+    def draw(self):
         """
         Disegna a schermo (renderizza) l'attuale stato di gioco.
         """
         self.screen.fill(BLUE)
-        self.screen.blit(self.player, self.player_rect)
+        self.entities.draw(self.screen)
 
         # Aggiorna la vista, rendendo effettivamente visibile ciò che
         # abbiamo disegnato su `self.screen` (che è la nostra finestra).

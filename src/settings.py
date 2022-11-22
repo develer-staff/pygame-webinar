@@ -9,5 +9,7 @@ NOTA: Alcune di queste informazioni, come la risoluzione, potrebbero essere tenu
 """
 TITOLO = "Game development con Pygame"
 RISOLUZIONE = (800, 450)
+FPS = 60
+
 BLUE = (0, 173, 233)
 YELLOW = (252, 182, 71)
