@@ -3,54 +3,18 @@
 
 import sys
 
+from enum import Enum
+
 import pygame as pg
 
 from settings import *
+from states import State, World, Pause, GameOver
 
 
-class Player(pg.sprite.Sprite):
-
-    def __init__(self, *groups: pg.sprite.AbstractGroup):
-        super().__init__(*groups)
-
-        self.image = self.get_surface()
-        self.rect = self.image.get_rect()
-
-        self.dir = pg.math.Vector2()
-        self.speed = 0.4
-
-    def get_surface(self) -> pg.Surface:
-        """
-        Restituisce una surface
-        """
-        surf = pg.Surface((50, 50))
-        surf.fill(YELLOW)
-        eye = pg.Surface((10, 20))
-        eye.fill("black")
-        surf.blits([(eye, (12, 10)), (eye, (28, 10))])
-        return surf
-
-    def move(self, keys, dt):
-        """
-        Gestisce l'input utente legato al movimento del giocatore.
-        """
-        self.dir.x = keys[pg.K_RIGHT] - keys[pg.K_LEFT]
-
-        # Nota: asse delle y invertito in Pygame.
-        self.dir.y = keys[pg.K_DOWN] - keys[pg.K_UP]
-
-        if self.dir.magnitude() != 0:
-            self.dir.normalize()
-
-        self.rect.move_ip(self.dir * self.speed * dt)
-
-    def update(self, dt):
-        """
-        Applica le logiche per aggiornare lo stato del player.
-        """
-        # Mapping dei tasti. { key : 0 | 1 }.
-        keys = pg.key.get_pressed()
-        self.move(keys, dt)
+class GameStates(Enum):
+    PLAY = 0
+    PAUSE = 1
+    GAME_OVER = 2
 
 
 class Game:
@@ -60,26 +24,27 @@ class Game:
 
     def __init__(self):
         pg.init()  # Inizializza i moduli di pygame.
-        self.screen = self.init_screen()
-        self.mouse_pos = (0, 0)
-        self.init_entities()
+        self.screen = self._init_screen()
+
+        self.states: dict[GameStates, State] = {GameStates.PLAY: World(self),
+                                                GameStates.PAUSE: Pause(self),
+                                                GameStates.GAME_OVER: GameOver(self)}
+
+        self.active_state = World(self)
+
         self.clock = pg.time.Clock()
         self.run_game_loop()
 
-    def init_entities(self):
-        self.entities = pg.sprite.Group()
-        self.player = Player(self.entities)
-
-    def init_screen(self) -> pg.Surface:
+    def _init_screen(self) -> pg.Surface:
         """
         Setta il titolo e le dimensioni della finestra
         principale di gioco e la restituisce.
         """
         # Setta il nome della finestra di gioco.
-        pg.display.set_caption(TITOLO)
+        pg.display.set_caption(TITLE)
 
         # Inizializza la finestra di gioco settandone la risoluzione e la restituisce.
-        return pg.display.set_mode(RISOLUZIONE)
+        return pg.display.set_mode(SCREEN_RES, flags=pg.RESIZABLE | pg.SCALED)
 
     def run_game_loop(self):
         """
@@ -116,27 +81,40 @@ class Game:
                 # logiche, ad esempio mostrare un pop-up per chiedere conferma,
                 # oppure eseguire un salvataggio automatico.
                 sys.exit()
-            elif event.type == pg.MOUSEMOTION:
-                # Usiamo l'attributo `pos` dell'evento `MOUSEMOTION`
-                # per aggiornare la posizione del mouse.
-                self.mouse_pos = event.pos
+
+            self.active_state.process_event(event, dt)
 
     def update(self, dt: int):
         """
         Applica le logiche per aggiornare lo stato di gioco.
         """
-        self.entities.update(dt)
+        self.active_state.update(dt)
 
     def draw(self):
         """
         Disegna a schermo (renderizza) l'attuale stato di gioco.
         """
-        self.screen.fill(BLUE)
-        self.entities.draw(self.screen)
+        self.active_state.draw()
+        pg.transform.scale(self.active_state.screen, SCREEN_RES, self.screen)
 
         # Aggiorna la vista, rendendo effettivamente visibile ciò che
         # abbiamo disegnato su `self.screen` (che è la nostra finestra).
         pg.display.update()
+
+    def pause(self):
+        self.active_state = self.states[GameStates.PAUSE]
+
+    def play(self):
+        self.active_state = self.states[GameStates.PLAY]
+
+    def game_over(self):
+        self.active_state = self.states[GameStates.GAME_OVER]
+
+    def new_game(self):
+        play_state = self.states[GameStates.PLAY]
+        assert isinstance(play_state, World)
+        play_state.new_game()
+        self.active_state = play_state
 
 
 if __name__ == '__main__':
