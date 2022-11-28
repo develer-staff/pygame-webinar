@@ -2,26 +2,142 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import random
+
+from enum import Enum
 from typing import TYPE_CHECKING, Type
 
 import pygame as pg
 
 from settings import *
 
+from assets import Tileset
+
 if TYPE_CHECKING:
     from states import World
 
 
-class Wall(pg.sprite.Sprite):
-
-    def __init__(self, x: int, y: int, image: pg.Surface, *args):
-        super().__init__(*args)
-        self.image = image
-        self.rect = image.get_rect()
-        self.rect.topleft = x, y
+class Direction(Enum):
+    DOWN = (0, 1)
+    UP = (0, -1)
+    LEFT = (-1, 0)
+    RIGHT = (1, 0)
 
 
-class Attack(pg.sprite.Sprite):
+class AnimationMachine:
+
+    class Animation(Enum):
+        MOVE = 0
+        ATK = 1
+
+    animation_duration: int = 100
+    default_animation = (Animation.MOVE, Direction.DOWN)
+
+    def __init__(self, sprite: pg.Sprite):
+        self._sprite = sprite
+        self._animation_locked = False
+        self._animations: dict[AnimationMachine.Animation, dict[Direction, list[pg.Surface]]] = self._init_animations()
+        self._set_default_animation()
+
+    def get_curr_image(self):
+        return self._curr_animation[int(self._curr_animation_loop)]
+
+    @classmethod
+    def _init_animations(cls) -> dict[Animation, dict[Direction, list[pg.Surface]]]:
+        """
+        Restituisce il dizionario delle animazioni dell'`Actor`.
+        """
+        raise NotImplementedError
+
+    def _set_default_animation(self):
+        animation, direction = self.default_animation
+        self._set_animation(animation, direction)
+
+    def _set_animation(self, animation: Animation, direction: Direction):
+        self._curr_animation = self._animations[animation][direction]
+        self._curr_animation_frames = len(self._curr_animation)
+        self._curr_animation_loop = 0.
+
+    def update(self, dt):
+        if self._animation_locked:
+            return
+
+        if not self._sprite.dir.magnitude():
+            self._curr_animation_loop = 0.
+            return
+
+        animation = self.Animation.MOVE
+        xy = self._sprite.facing.xy
+
+        direction = Direction(xy)
+
+        if self._curr_animation is not self._animations[animation][direction]:
+            self._set_animation(animation, direction)
+            return
+
+        self._curr_animation_loop += dt / self.animation_duration
+        if self._curr_animation_loop >= self._curr_animation_frames:
+            self._curr_animation_loop -= self._curr_animation_frames
+
+
+class EnemyAnimation(AnimationMachine):
+
+    @classmethod
+    def _init_animations(cls):
+        spritesheet = Tileset(IMAGES / "enemy_spritesheet.png", TILESIZE)
+        return {
+            cls.Animation.MOVE: {
+                Direction.DOWN: spritesheet.images_at_col(0),
+                Direction.UP: spritesheet.images_at_col(1),
+                Direction.LEFT: spritesheet.images_at_col(2),
+                Direction.RIGHT: spritesheet.images_at_col(3),
+            }
+        }
+
+
+class PlayerAnimation(AnimationMachine):
+
+    def attack_animation(self):
+        self._animation_locked = True
+        animation = self.Animation.ATK
+        xy = self._sprite.facing.xy
+        direction = Direction(xy)
+        self._set_animation(animation, direction)
+
+    def end_attack_animation(self):
+        self._animation_locked = False
+        self._set_default_animation()
+
+    @classmethod
+    def _init_animations(cls):
+        spritesheet = Tileset(IMAGES / "player_spritesheet.png", TILESIZE)
+        return {
+            cls.Animation.MOVE: {
+                Direction.DOWN: spritesheet.images_at_col(0)[:-1],
+                Direction.UP: spritesheet.images_at_col(1)[:-1],
+                Direction.LEFT: spritesheet.images_at_col(2)[:-1],
+                Direction.RIGHT: spritesheet.images_at_col(3)[:-1],
+            },
+            cls.Animation.ATK: {
+                Direction.DOWN: spritesheet.images_at_col(0)[-1:],
+                Direction.UP: spritesheet.images_at_col(1)[-1:],
+                Direction.LEFT: spritesheet.images_at_col(2)[-1:],
+                Direction.RIGHT: spritesheet.images_at_col(3)[-1:],
+            },
+        }
+
+
+class Entity(pg.sprite.Sprite):
+
+    @property
+    def pos(self):
+        return self.rect.midbottom
+
+    def draw(self, surface: pg.Surface):
+        surface.blit(self.image, self.rect)
+
+
+class Attack(Entity):
 
     damage: int = None
     animation_time: int = None
@@ -35,9 +151,15 @@ class Attack(pg.sprite.Sprite):
         self._attack_animation_start = pg.time.get_ticks()
 
     def _get_surface(self) -> pg.Surface:
-        surf = pg.Surface((SPRITESIZE, SPRITESIZE))
-        surf.fill("gray")
-        return surf
+        sword_down = pg.image.load(IMAGES / "sword_y.png").convert_alpha()
+        sword_right = pg.image.load(IMAGES / "sword_x.png").convert_alpha()
+        surfaces = {
+            Direction.DOWN: sword_down,
+            Direction.UP: pg.transform.rotate(sword_down, 180),
+            Direction.LEFT: pg.transform.rotate(sword_right, 180),
+            Direction.RIGHT: sword_right,
+        }
+        return surfaces[Direction(self.dir.xy)]
 
     def update(self):
         self._move()
@@ -46,7 +168,7 @@ class Attack(pg.sprite.Sprite):
             self.kill()
 
     def _move(self):
-        p_rect = self.player.rect
+        p_rect = self.player.hitbox
         a_rect = self.rect
         xy = self.dir.xy
 
@@ -57,7 +179,7 @@ class Attack(pg.sprite.Sprite):
         elif xy == (-1, 0):
             a_rect.midright = p_rect.midleft
         elif xy == (0, -1):
-            a_rect.midbottom = p_rect.midtop
+            a_rect.midbottom = self.player.rect.midtop
 
     def hit(self, entity: Actor):
         entity.suffer_damage(self.damage)
@@ -69,47 +191,65 @@ class Sword(Attack):
     animation_time = 200
 
 
-class Entity(pg.sprite.Sprite):
+class Wall(Entity):
 
-    def __init__(self, world: World, *groups):
-        super().__init__(*groups)
-        self._world = world
-
-        self.image = self._get_surface()
+    def __init__(self, x: int, y: int, *args):
+        super().__init__(*args)
+        tiles: list[pg.Surface] = Tileset(IMAGES / "rock_tileset.png", TILESIZE).images_at_row(0)
+        self.image = random.choice(tiles)
         self.rect = self.image.get_rect()
-        self.dir = pg.math.Vector2()
-
-    @property
-    def center(self):
-        return self.rect.center
-
-    def _get_surface(self) -> pg.Surface:
-        """
-        Restituisce l'immagine relativa allo sprite.
-        """
-        raise NotImplementedError
+        self.rect.topleft = x, y
 
 
 class Actor(Entity):
 
+    animation_type: Type[AnimationMachine] = None
     speed: int = None
     max_hp: int = None
     damage: int = None
     immunity_time: int = 1000
 
-    def __init__(self, x: int, y: int, colliding: list[pg.sprite.AbstractGroup], *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, x: int, y: int, colliding: list[pg.sprite.AbstractGroup], world: World, *args):
+        super().__init__(*args)
+        self._world = world
+        self._animation = self.animation_type(self)
+
+        self.facing = pg.Vector2(0, 1)
+
+        self.rect = self.image.get_rect()
+        self.hitbox = self.rect.inflate(-8, -8)
+        self.dir = pg.math.Vector2()
         self._colliding_entities = colliding
 
-        self.rect.center = x, y
+        self.hitbox.midbottom = self.rect.midbottom = x, y
         self.hp = self.max_hp
-        self.last_damage = 0
+        self.last_damage = 0.
+
+    @property
+    def image(self) -> pg.Surface:
+        return self._animation.get_curr_image()
+
+    @property
+    def center(self):
+        return self.rect.center
 
     def update(self, dt):
         """
         Applica le logiche per aggiornare lo stato del player.
         """
         self._move_and_collide(dt)
+        self._update_rect()
+        self._set_facing()
+        self._animation.update(dt)
+
+    def _update_rect(self):
+        self.rect.midbottom = self.hitbox.midbottom
+
+    def _set_facing(self):
+        if self.dir.x != 0:
+            self.facing.xy = -1 if self.dir.x < 0 else 1, 0
+        elif self.dir.y != 0:
+            self.facing.xy = 0, -1 if self.dir.y < 0 else 1
 
     def _update_dir(self):
         """
@@ -141,10 +281,10 @@ class Actor(Entity):
         if value == 0:
             return
 
-        self.rect.x += value
+        self.hitbox.x += value
         for group in self._colliding_entities:
             for entity in group:
-                if self._collide(entity):
+                if self.collide(entity):
 
                     if value > 0:
                         self._collide_right(entity.rect.left - 1)
@@ -159,10 +299,10 @@ class Actor(Entity):
         if value == 0:
             return
 
-        self.rect.y += value
+        self.hitbox.y += value
         for group in self._colliding_entities:
             for entity in group:
-                if self._collide(entity):
+                if self.collide(entity):
 
                     if value > 0:
                         self._collide_bottom(entity.rect.top - 1)
@@ -177,7 +317,7 @@ class Actor(Entity):
         """
         left = top = 0
         right, bottom = VIEW_RES
-        r = self.rect
+        r = self.hitbox
 
         if r.top < top:
             self._collide_top(top - 1)
@@ -195,7 +335,7 @@ class Actor(Entity):
         collide con un'altra entità solida.
         `x` è la `x` del punto di collisione.
         """
-        self.rect.right = x
+        self.hitbox.right = x
 
     def _collide_left(self, x: int):
         """
@@ -203,7 +343,7 @@ class Actor(Entity):
         collide con un'altra entità solida.
         `x` è la `x` del punto di collisione.
         """
-        self.rect.left = x
+        self.hitbox.left = x
 
     def _collide_bottom(self, y: int):
         """
@@ -211,7 +351,7 @@ class Actor(Entity):
         collide con un'altra entità solida.
         `y` è la `y` del punto di collisione.
         """
-        self.rect.bottom = y
+        self.hitbox.bottom = y
 
     def _collide_top(self, y: int):
         """
@@ -219,13 +359,13 @@ class Actor(Entity):
         collide con un'altra entità solida.
         `y` è la `y` del punto di collisione.
         """
-        self.rect.top = y
+        self.hitbox.top = y
 
-    def _collide(self, entity: pg.sprite.Sprite) -> bool:
+    def collide(self, entity: pg.sprite.Sprite) -> bool:
         """
         `True` se le due entità collidono.
         """
-        return self.rect.colliderect(entity.rect)
+        return self.hitbox.colliderect(entity.rect)
 
     def suffer_damage(self, dmg: int):
         """
@@ -251,8 +391,9 @@ class Actor(Entity):
 
 class Enemy(Actor):
 
-    speed = .3
-    view_range = 250
+    animation_type = EnemyAnimation
+    speed = .08
+    view_range = 64
     max_hp = 1
     damage = 1
 
@@ -260,17 +401,12 @@ class Enemy(Actor):
         super().__init__(*args, **kwargs)
         self._player: Player = self._world.player
 
-    def _get_surface(self):
-        surf = pg.Surface((SPRITESIZE, SPRITESIZE))
-        surf.fill(RED)
-        return surf
-
     def _update_dir(self):
         """
         Aggiorna il vettore direzione.
         """
-        px, py = self._player.center
-        ex, ey = self.center
+        px, py = self._player.pos
+        ex, ey = self.pos
         self.dir.xy = px - ex, py - ey
 
         if self.dir.magnitude() > self.view_range:
@@ -282,40 +418,27 @@ class Enemy(Actor):
 
 class Player(Actor):
 
-    speed = 0.4
+    animation_type = PlayerAnimation
+    speed = .2
     max_hp = 3
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._attack_type: Type[Attack] = Sword
         self._attack: Attack | None = None
-        self.facing = pg.Vector2(0, 1)
-
-    def update(self, dt):
-        super().update(dt)
-        self._set_facing()
-
-    def _set_facing(self):
-        if self.dir.x != 0:
-            self.facing.xy = -1 if self.dir.x < 0 else 1, 0
-        elif self.dir.y != 0:
-            self.facing.xy = 0, -1 if self.dir.y < 0 else 1
 
     def attack(self) -> Attack:
         if not self.is_attacking():
             self._attack = self._attack_type(self)
+            self._animation.attack_animation()
         return self._attack
 
     def end_attack(self):
         self._attack = None
+        self._animation.end_attack_animation()
 
     def is_attacking(self):
         return bool(self._attack)
-
-    def _get_surface(self):
-        surf = pg.Surface((SPRITESIZE, SPRITESIZE))
-        surf.fill(YELLOW)
-        return surf
 
     def _update_dir(self):
         """

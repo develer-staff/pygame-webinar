@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import random
+
 import pygame as pg
 
 from settings import *
 
-from entities import Player, Enemy, Wall, Attack
+from assets import Tileset
+from entities import Entity, Player, Enemy, Wall, Attack
 
 
 class State:
@@ -56,7 +59,7 @@ class World(State):
         self._init_world()
 
     def _init_groups(self):
-        self.visible_actors = pg.sprite.Group()
+        self.visible_entities = pg.sprite.Group()
         self.environment = pg.sprite.Group()
         self.actors = pg.sprite.Group()
         self.player_group = pg.sprite.GroupSingle()
@@ -67,11 +70,8 @@ class World(State):
         """
         Crea la mappa del mondo.
         """
-        # Creiamo le surface per grass e wall.
-        grass = pg.Surface((TILESIZE, TILESIZE))
-        grass.fill("darkgreen")
-        wall = pg.Surface((TILESIZE, TILESIZE))
-        wall.fill("black")
+        # Creiamo le surface per lo sfondo.
+        grass_tiles = Tileset(IMAGES / "grass_tileset.png", TILESIZE).images_at_row(0)
 
         world_x = SCREEN_TILES[0] * TILESIZE
         world_y = SCREEN_TILES[1] * TILESIZE
@@ -84,9 +84,9 @@ class World(State):
                 x = col_index * TILESIZE
                 y = row_index * TILESIZE
 
-                self.background.blit(grass, (x, y))
+                self.background.blit(random.choice(grass_tiles), (x, y))
                 if col == "W":
-                    Wall(x, y, wall, self.environment)
+                    Wall(x, y, self.environment, self.visible_entities)
                     continue
 
                 x += HALF_TILESIZE
@@ -95,9 +95,9 @@ class World(State):
                 if col == "P":
                     players += 1
                     self.player = Player(x, y, [self.environment], self,
-                                         self.player_group, self.actors, self.visible_actors)
+                                         self.player_group, self.actors, self.visible_entities)
                 elif col == "E":
-                    Enemy(x, y, [self.environment], self, self.enemies, self.actors, self.visible_actors)
+                    Enemy(x, y, [self.environment], self, self.enemies, self.actors, self.visible_entities)
 
         if players != 1:
             raise Exception(f"Invalid number of players: {players}")
@@ -107,7 +107,9 @@ class World(State):
             if event.key == pg.K_ESCAPE:
                 self.game.pause()
             elif event.key == pg.K_SPACE:
-                self.attacks.add(self.player.attack())
+                attack = self.player.attack()
+                self.attacks.add(attack)
+                self.visible_entities.add(attack)
 
     def update(self, dt):
         """
@@ -116,10 +118,10 @@ class World(State):
         # Chiamo la `update()` di tutti gli `Actor` nel gruppo `self.actors`
         self.actors.update(dt)
 
-        attacking_enemies = pg.sprite.spritecollide(self.player, self.enemies, False)
-        for enemy in attacking_enemies:
-            assert isinstance(enemy, Enemy)
-            enemy.damage_player()
+        for enemy in self.enemies:
+            if self.player.collide(enemy):
+                assert isinstance(enemy, Enemy)
+                enemy.damage_player()
 
         if self.player.is_attacking():
             self.attacks.update()
@@ -134,9 +136,9 @@ class World(State):
         Disegna a schermo (renderizza) l'attuale stato di gioco.
         """
         self.screen.blit(self.background, (0, 0))
-        self.environment.draw(self.screen)
-        self.visible_actors.draw(self.screen)
-        self.attacks.draw(self.screen)
+        for ent in sorted(self.visible_entities, key=lambda e: e.pos[1]):
+            assert isinstance(ent, Entity)
+            ent.draw(self.screen)
 
     def game_over(self):
         self.game.game_over()

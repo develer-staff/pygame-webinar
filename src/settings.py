@@ -8,6 +8,15 @@ NOTA: Alcune di queste informazioni, come la risoluzione, potrebbero essere tenu
       utente, ma, per questioni di semplificazione, le teniamo qui come costanti.
 """
 
+import pathlib
+
+# Assets
+SRC = pathlib.Path(__file__).parent.resolve()
+ASSETS = SRC / "assets"
+IMAGES = ASSETS / "img"
+SOUNDS = ASSETS / "sound"
+FONTS = ASSETS / "font"
+
 # Schermo e finestra.
 TITLE = "Game development con Pygame"
 FPS = 60
@@ -15,9 +24,8 @@ FPS = 60
 SCREEN_RES = (800, 550)
 SCREEN_TILES = (16, 11)
 
-TILESIZE = 64
+TILESIZE = 16
 HALF_TILESIZE = TILESIZE / 2
-SPRITESIZE = int(HALF_TILESIZE)
 
 VIEW_RES = (SCREEN_TILES[0] * TILESIZE,
             SCREEN_TILES[1] * TILESIZE)
