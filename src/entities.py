@@ -181,8 +181,8 @@ class Attack(Entity):
         elif xy == (0, -1):
             a_rect.midbottom = self.player.rect.midtop
 
-    def hit(self, entity: Actor):
-        entity.suffer_damage(self.damage)
+    def hit(self, entity: Actor) -> bool:
+        return entity.suffer_damage(self.damage)
 
 
 class Sword(Attack):
@@ -367,7 +367,7 @@ class Actor(Entity):
         """
         return self.hitbox.colliderect(entity.rect)
 
-    def suffer_damage(self, dmg: int):
+    def suffer_damage(self, dmg: int) -> bool:
         """
         L'entità riceve danno.
         """
@@ -375,12 +375,13 @@ class Actor(Entity):
         elapsed = t - self.last_damage
 
         if elapsed <= self.immunity_time:
-            return
+            return False
 
         self.last_damage = t
         self.hp -= dmg
         if self.hp <= 0:
             self._die()
+        return True
 
     def _die(self):
         """
@@ -412,8 +413,8 @@ class Enemy(Actor):
         if self.dir.magnitude() > self.view_range:
             self.dir.xy = 0, 0
 
-    def damage_player(self):
-        self._player.suffer_damage(self.damage)
+    def damage_player(self) -> bool:
+        return self._player.suffer_damage(self.damage)
 
 
 class Player(Actor):

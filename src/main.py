@@ -106,6 +106,7 @@ class Game:
 
     def play(self):
         self.active_state = self.states[GameStates.PLAY]
+        self.active_state.play()
 
     def game_over(self):
         self.active_state = self.states[GameStates.GAME_OVER]

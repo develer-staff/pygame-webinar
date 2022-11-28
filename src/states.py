@@ -52,11 +52,24 @@ class World(State):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._init_sounds()
         self.new_game()
+
+    def _init_sounds(self):
+        self._attack_sound = pg.mixer.Sound(SOUNDS / "Attack.wav")
+        self._enemy_hit_sound = pg.mixer.Sound(SOUNDS / "EnemyHit.wav")
+        self._player_hit_sound = pg.mixer.Sound(SOUNDS / "PlayerHit.wav")
+        self._game_over_sound = pg.mixer.Sound(SOUNDS / "GameOver.wav")
 
     def new_game(self):
         self._init_groups()
         self._init_world()
+        self._start_bg_music()
+
+    def _start_bg_music(self):
+        pg.mixer.music.load(SOUNDS / "theme.ogg")
+        pg.mixer.music.set_volume(.4)
+        pg.mixer.music.play(loops=-1)
 
     def _init_groups(self):
         self.visible_entities = pg.sprite.Group()
@@ -105,11 +118,22 @@ class World(State):
     def process_event(self, event: pg.event.Event, dt: int):
         if event.type == pg.KEYDOWN:
             if event.key == pg.K_ESCAPE:
-                self.game.pause()
+                self.pause()
             elif event.key == pg.K_SPACE:
-                attack = self.player.attack()
-                self.attacks.add(attack)
-                self.visible_entities.add(attack)
+                self.player_start_attack()
+
+    def player_start_attack(self):
+        self._attack_sound.play()
+        attack = self.player.attack()
+        self.attacks.add(attack)
+        self.visible_entities.add(attack)
+
+    def pause(self):
+        pg.mixer.music.stop()
+        self.game.pause()
+
+    def play(self):
+        pg.mixer.music.play(-1)
 
     def update(self, dt):
         """
@@ -121,15 +145,20 @@ class World(State):
         for enemy in self.enemies:
             if self.player.collide(enemy):
                 assert isinstance(enemy, Enemy)
-                enemy.damage_player()
+                if enemy.damage_player():
+                    self._player_hit_sound.play()
 
         if self.player.is_attacking():
             self.attacks.update()
             attacked_enemies = pg.sprite.groupcollide(self.attacks, self.enemies, False, False)
+
             for attack, enemies in attacked_enemies.items():
                 assert isinstance(attack, Attack) and isinstance(enemies, list)
                 for enemy in enemies:
                     attack.hit(enemy)
+
+            if attacked_enemies:
+                self._enemy_hit_sound.play()
 
     def draw(self):
         """
@@ -141,6 +170,8 @@ class World(State):
             ent.draw(self.screen)
 
     def game_over(self):
+        pg.mixer.music.stop()
+        self._game_over_sound.play()
         self.game.game_over()
 
 
