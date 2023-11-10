@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -eu
+
+cd "$(dirname "${0}")/../"
+
+pip install mock pytest pytest-cov
+python -m pytest --cov-report=term
